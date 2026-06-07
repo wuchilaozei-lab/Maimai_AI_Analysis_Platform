@@ -4,7 +4,7 @@ import axios from "axios";
 import html2canvas from "html2canvas";
 import RadarChart from "../components/RadarChart.vue";
 
-const apiBase = ref("http://127.0.0.1:8000");
+const API_BASE = "http://127.0.0.1:8000";
 const username = ref("");
 const qq = ref("");
 const loading = ref(false);
@@ -16,6 +16,9 @@ const recommendData = ref(null);
 const activeTab = ref("overview");
 const queryProgress = ref(0);
 const b50Tab = ref("B35");
+const evaluationModel = ref("legacy");
+const includeRecords = ref(false);
+const importToken = ref("");
 const exportLoading = ref(false);
 const exportTarget = ref(null);
 let progressTimer = null;
@@ -69,7 +72,12 @@ async function submitAnalyze() {
     const payload = { b50: "1" };
     if (username.value) payload.username = username.value;
     if (qq.value) payload.qq = qq.value;
-    const resp = await axios.post(`${apiBase.value}/analysis/b50`, payload);
+    payload.evaluation_model = evaluationModel.value;
+    payload.include_records = includeRecords.value;
+    if (includeRecords.value && importToken.value) {
+      payload.import_token = importToken.value;
+    }
+    const resp = await axios.post(`${API_BASE}/analysis/b50`, payload);
     result.value = resp.data;
     await fetchRecommend(payload);
   } catch (e) {
@@ -89,7 +97,7 @@ async function fetchRecommend(payload = null) {
       if (username.value) reqPayload.username = username.value;
       if (qq.value) reqPayload.qq = qq.value;
     }
-    const resp = await axios.post(`${apiBase.value}/analysis/recommend`, reqPayload);
+    const resp = await axios.post(`${API_BASE}/analysis/recommend`, reqPayload);
     recommendData.value = resp.data;
   } catch (e) {
     recommendError.value = e?.response?.data?.detail || e.message || "获取推荐失败";
@@ -172,19 +180,30 @@ async function exportB50Image() {
 <template>
   <div class="page">
     <header class="top card">
-      <p class="eyebrow">MAIMAI ANALYSIS STATION</p>
-      <h1>舞萌 B50 六维分析平台</h1>
-      <p>接入水鱼查分器，自动产出六维能力图、短板定位与阶段训练建议</p>
+      <p class="eyebrow">MAIMAI PERFORMANCE STUDIO</p>
+      <h1>舞萌 B50 分析台</h1>
+      <p>输入玩家信息，查看六维能力、B35/B15 结构和训练建议</p>
     </header>
 
     <section class="card form">
       <div class="form-grid">
-        <label>后端地址</label>
-        <input v-model="apiBase" placeholder="http://127.0.0.1:8000" />
         <label>水鱼用户名</label>
         <input v-model="username" placeholder="例如：player_name" />
         <label>QQ号</label>
         <input v-model="qq" placeholder="例如：123456789" />
+        <label>评价体系</label>
+        <select v-model="evaluationModel" class="select">
+          <option value="legacy">legacy（现有六维）</option>
+          <option value="s4">s4（悟吉塔4风格）</option>
+        </select>
+        <label class="checkbox-wrap">
+          <input v-model="includeRecords" type="checkbox" class="checkbox" />
+          启用 records 全量成绩（需 Import-Token）
+        </label>
+        <div v-if="includeRecords">
+          <label>Import-Token</label>
+          <input v-model="importToken" placeholder="仅本地使用，不会展示" />
+        </div>
       </div>
       <button :disabled="loading" @click="submitAnalyze">
         {{ loading ? "分析中..." : "开始分析" }}
@@ -215,6 +234,11 @@ async function exportB50Image() {
           <h3>六维实力图</h3>
           <span class="rating-chip">RATING {{ result.rating ?? "-" }}</span>
         </div>
+        <p class="model-line">
+          模式：{{ result.evaluation_model || evaluationModel }}
+          <span v-if="result.w_tier">| W值：{{ result.w_tier }}</span>
+          <span v-if="result.stage">| 阶段：{{ result.stage }}</span>
+        </p>
         <RadarChart :dimensions="result.radar.dimensions" />
       </div>
       <div class="card">
@@ -241,9 +265,34 @@ async function exportB50Image() {
           <h5>{{ item.title }}</h5>
           <p>{{ item.detail }}</p>
           <p class="songs">推荐标签：{{ item.songs.join("、") || "无" }}</p>
+          <p v-if="item.target_dimension || item.target_ds_range?.length" class="songs">
+            目标维度：{{ item.target_dimension || "-" }} |
+            DS区间：{{ (item.target_ds_range || []).join("~") || "-" }}
+          </p>
         </article>
         </div>
       </div>
+    </section>
+
+    <section v-if="result && (result.skill_gaps?.length || result.training_strategy || result.records_summary?.total_records)" class="card recommend-card">
+      <h3>S4 诊断补充</h3>
+      <p v-if="result.training_strategy">
+        策略：{{ result.training_strategy.strategy || "-" }} /
+        阶段：{{ result.training_strategy.phase || "-" }} /
+        区间：{{ (result.training_strategy.target_ds_range || []).join("~") || "-" }}
+      </p>
+      <p v-if="result.training_strategy">{{ result.training_strategy.rationale }}</p>
+      <div v-if="result.skill_gaps?.length" class="recommend-grid">
+        <article v-for="(gap, idx) in result.skill_gaps" :key="idx" class="recommend-item">
+          <strong>{{ gap.type }}</strong>
+          <p>严重度：{{ gap.severity }}</p>
+          <p>证据曲：{{ (gap.evidence_songs || []).join("、") || "-" }}</p>
+        </article>
+      </div>
+      <p v-if="result.records_summary?.total_records">
+        Records总数：{{ result.records_summary.total_records }} |
+        FC数：{{ result.records_summary.fc_count ?? "-" }}
+      </p>
     </section>
 
     <section v-if="result" ref="exportTarget" class="card b50-card">
@@ -336,86 +385,123 @@ async function exportB50Image() {
 
 <style scoped>
 .page {
-  max-width: 1100px;
+  max-width: 1180px;
   margin: 0 auto;
-  padding: 24px;
-  color: #f2f5ff;
+  padding: 28px;
+  color: #e8ecf8;
   background:
-    radial-gradient(circle at 20% 10%, #1f3f78 0%, transparent 30%),
-    radial-gradient(circle at 85% 20%, #57257a 0%, transparent 35%),
-    #070b18;
+    radial-gradient(circle at 12% 8%, rgba(69, 102, 167, 0.25) 0%, transparent 34%),
+    radial-gradient(circle at 82% 14%, rgba(82, 49, 141, 0.2) 0%, transparent 36%),
+    #060a16;
   min-height: 100vh;
-  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
 }
 
 .eyebrow {
   margin: 0 0 8px;
-  font-size: 12px;
-  letter-spacing: 1.2px;
-  color: #9cb9ff;
+  font-size: 11px;
+  letter-spacing: 1.6px;
+  color: #8ea5d9;
+  text-transform: uppercase;
 }
 
 .top h1 {
-  margin: 0 0 8px;
-  font-size: 36px;
-  letter-spacing: 0.4px;
+  margin: 0 0 10px;
+  font-size: 34px;
+  letter-spacing: 0.2px;
+  font-weight: 650;
 }
 
 .top p {
-  color: #c9d7ff;
+  color: #b9c4e4;
   margin: 0;
 }
 
 .card {
-  background: linear-gradient(155deg, rgba(18, 25, 50, 0.88), rgba(13, 19, 41, 0.93));
-  border: 1px solid rgba(114, 139, 212, 0.32);
-  border-radius: 18px;
-  padding: 18px;
-  margin-top: 16px;
-  box-shadow: 0 14px 35px rgba(0, 0, 0, 0.32);
+  background: linear-gradient(160deg, rgba(16, 23, 44, 0.93), rgba(10, 15, 31, 0.95));
+  border: 1px solid rgba(94, 113, 171, 0.28);
+  border-radius: 14px;
+  padding: 18px 18px 16px;
+  margin-top: 14px;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.26);
 }
 
 .form {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 10px;
+  gap: 12px;
 }
 
 .form-grid {
   display: grid;
-  grid-template-columns: 1fr;
-  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 12px;
 }
 
 label {
-  font-size: 13px;
-  color: #a8beff;
+  font-size: 12px;
+  color: #9fb1df;
+  margin-bottom: 4px;
+  display: block;
 }
 
 input {
-  height: 40px;
-  border-radius: 10px;
-  border: 1px solid #354b8b;
-  background: rgba(10, 16, 34, 0.7);
-  color: #edf2ff;
-  padding: 0 12px;
+  height: 38px;
+  border-radius: 9px;
+  border: 1px solid #2f4177;
+  background: rgba(8, 13, 29, 0.75);
+  color: #e7edff;
+  padding: 0 11px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.select {
+  height: 38px;
+  border-radius: 9px;
+  border: 1px solid #2f4177;
+  background: rgba(8, 13, 29, 0.75);
+  color: #e7edff;
+  padding: 0 8px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.checkbox-wrap {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.checkbox {
+  width: 16px;
+  height: 16px;
+}
+
+input:focus {
+  outline: none;
+  border-color: #5e7ed3;
+  box-shadow: 0 0 0 2px rgba(81, 117, 214, 0.2);
 }
 
 button {
-  margin-top: 10px;
-  height: 42px;
-  border-radius: 10px;
+  margin-top: 6px;
+  height: 40px;
+  border-radius: 9px;
   border: none;
-  background: linear-gradient(90deg, #3a8dff, #7d53ff 58%, #d24fff);
+  background: linear-gradient(90deg, #2d72de, #5b5bd6 58%, #8a4fcb);
   color: #fff;
   font-weight: 600;
+  letter-spacing: 0.2px;
   cursor: pointer;
-  transition: transform 0.18s ease, box-shadow 0.18s ease;
+  transition: transform 0.16s ease, box-shadow 0.16s ease;
 }
 
 button:hover {
   transform: translateY(-1px);
-  box-shadow: 0 10px 22px rgba(81, 129, 255, 0.35);
+  box-shadow: 0 8px 18px rgba(62, 98, 185, 0.38);
 }
 
 button:disabled {
@@ -425,7 +511,13 @@ button:disabled {
 .layout {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 16px;
+  gap: 14px;
+}
+
+.model-line {
+  margin: 6px 0 10px;
+  color: #9db3e2;
+  font-size: 12px;
 }
 
 .title-row {
@@ -440,11 +532,11 @@ button:disabled {
   align-items: center;
   justify-content: center;
   padding: 4px 12px;
-  border: 1px solid #4c72d8;
+  border: 1px solid #4867b8;
   border-radius: 999px;
   font-size: 12px;
-  color: #b8cdff;
-  background: rgba(16, 35, 80, 0.6);
+  color: #b7c9f3;
+  background: rgba(16, 30, 66, 0.64);
 }
 
 .tabs {
@@ -457,15 +549,15 @@ button:disabled {
   margin-top: 0;
   height: 34px;
   padding: 0 14px;
-  border: 1px solid #38539c;
+  border: 1px solid #324982;
   border-radius: 999px;
   background: rgba(21, 33, 65, 0.9);
-  color: #bdd0ff;
+  color: #b8c8ee;
   box-shadow: none;
 }
 
 .tabs button.active {
-  background: linear-gradient(90deg, #3d7aff, #7f58ff);
+  background: linear-gradient(90deg, #366dd8, #6750cf);
   border-color: transparent;
   color: #fff;
 }
@@ -481,8 +573,8 @@ button:disabled {
   margin-top: 8px;
   padding: 10px 12px;
   border-radius: 10px;
-  border: 1px solid #2f437f;
-  background: rgba(8, 15, 35, 0.7);
+  border: 1px solid #2b3f73;
+  background: rgba(7, 13, 31, 0.74);
 }
 
 .dimension-item p {
@@ -493,7 +585,7 @@ button:disabled {
 .advice {
   margin-top: 10px;
   padding: 12px;
-  background: rgba(13, 20, 48, 0.9);
+  background: rgba(12, 18, 40, 0.9);
   border-radius: 10px;
   border: 1px solid #2d3a63;
 }
@@ -521,13 +613,13 @@ button:disabled {
   height: 10px;
   border-radius: 999px;
   background: rgba(30, 45, 86, 0.85);
-  border: 1px solid #3554a5;
+  border: 1px solid #304b8f;
   overflow: hidden;
 }
 
 .progress-inner {
   height: 100%;
-  background: linear-gradient(90deg, #33b1ff, #7378ff, #d84eff);
+  background: linear-gradient(90deg, #2994da, #6a69d3, #a14ccc);
   transition: width 0.25s ease;
 }
 
@@ -586,8 +678,8 @@ button:disabled {
 .b50-item {
   display: flex;
   gap: 12px;
-  border: 1px solid #2f437f;
-  background: rgba(8, 15, 35, 0.8);
+  border: 1px solid #2b3f73;
+  background: rgba(7, 13, 31, 0.8);
   border-radius: 12px;
   padding: 10px;
 }
@@ -759,8 +851,8 @@ button:disabled {
 }
 
 .recommend-item {
-  border: 1px solid #2f437f;
-  background: rgba(8, 15, 35, 0.78);
+  border: 1px solid #2b3f73;
+  background: rgba(7, 13, 31, 0.78);
   border-radius: 10px;
   padding: 10px 12px;
 }
@@ -787,6 +879,10 @@ button:disabled {
 }
 
 @media (max-width: 900px) {
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+
   .layout {
     grid-template-columns: 1fr;
   }

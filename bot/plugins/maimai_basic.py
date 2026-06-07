@@ -20,6 +20,8 @@ async def _() -> None:
         "4) b50摘要 用户名\n"
         "5) 今日推荐\n"
         "6) 训练推荐 用户名\n"
+        "7) b50分析 用户名 mode:s4\n"
+        "8) b50摘要 用户名 mode:s4\n"
     )
 
 
@@ -95,6 +97,8 @@ async def _(event: MessageEvent) -> None:
     ]
     await recommend_by_player_cmd.finish(
         f"玩家: {data.get('player_id', '-')}\n"
+        f"模型: {data.get('evaluation_model', '-')}\n"
+        f"W值: {data.get('w_tier', '-')}\n"
         f"短板维度: {'/'.join(data.get('shortfalls', []))}\n"
         f"训练推荐:\n" + "\n".join(lines)
     )

@@ -71,4 +71,12 @@ class SixDimEngine:
         sorted_dims = sorted(dimensions, key=lambda d: d.score)
         shortfalls = [d.key for d in sorted_dims[:2]]
         strengths = [d.key for d in sorted(dimensions, key=lambda d: d.score, reverse=True)[:2]]
-        return RadarOutput(player_id=player_id, dimensions=dimensions, shortfalls=shortfalls, strengths=strengths)
+        return RadarOutput(
+            player_id=player_id,
+            dimensions=dimensions,
+            shortfalls=shortfalls,
+            strengths=strengths,
+            evaluation_model="legacy",
+            w_tier=None,
+            stage=None,
+        )

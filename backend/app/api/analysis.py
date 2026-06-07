@@ -24,18 +24,28 @@ async def recommend_from_player(req: QueryPlayerRequest) -> dict:
         analyzed = await service.analyze_b50(req)
         shortfalls = analyzed.radar.shortfalls
         player_id = analyzed.player_id
+        w_tier = analyzed.w_tier
+        strategy = analyzed.training_strategy.model_dump() if analyzed.training_strategy else None
         source = "player-shortfall"
         warning = None
     except DivingFishError as exc:
-        shortfalls = ["coverage", "resilience"]
+        if req.evaluation_model == "s4":
+            shortfalls = ["level_adapt", "technique_gap"]
+        else:
+            shortfalls = ["coverage", "resilience"]
         player_id = req.username or req.qq or "unknown"
+        w_tier = None
+        strategy = None
         source = "fallback-default"
         warning = str(exc)
 
     items = service.recommend_songs_by_shortfall(shortfalls, limit=6)
     return {
         "player_id": player_id,
+        "evaluation_model": req.evaluation_model,
+        "w_tier": w_tier,
         "shortfalls": shortfalls,
+        "strategy": strategy,
         "items": [item.model_dump() for item in items],
         "source": source,
         "warning": warning,

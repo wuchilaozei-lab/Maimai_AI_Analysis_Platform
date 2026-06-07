@@ -23,6 +23,12 @@ def suggest_training_tags(weak_dimensions: list[str]) -> list[str]:
         "coverage": ["style:swing", "style:jack", "style:tech"],
         "growth": ["stamina:mid", "reading:mid"],
         "resilience": ["style:balance", "stamina:high"],
+        "rating_w": ["style:balance", "reading:mid"],
+        "level_adapt": ["style:balance", "stamina:mid"],
+        "accuracy_dx": ["style:flow", "reading:high"],
+        "stamina_base": ["stamina:high", "style:tech"],
+        "technique_gap": ["style:jack", "style:tech", "reading:high"],
+        "mindset": ["style:balance", "reading:low"],
     }
     out: list[str] = []
     for key in weak_dimensions:

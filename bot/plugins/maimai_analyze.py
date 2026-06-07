@@ -7,11 +7,18 @@ b50_summary_cmd = on_command("b50摘要", aliases={"b50summary"}, priority=5)
 
 
 def _parse_player_text(text: str) -> dict:
-    payload = {"b50": "1"}
-    if text.startswith("qq:"):
-        payload["qq"] = text.replace("qq:", "", 1)
+    payload = {"b50": "1", "evaluation_model": "legacy"}
+    normalized = text.strip()
+    if "mode:s4" in normalized:
+        payload["evaluation_model"] = "s4"
+        normalized = normalized.replace("mode:s4", "").strip()
+    elif "mode:legacy" in normalized:
+        payload["evaluation_model"] = "legacy"
+        normalized = normalized.replace("mode:legacy", "").strip()
+    if normalized.startswith("qq:"):
+        payload["qq"] = normalized.replace("qq:", "", 1)
     else:
-        payload["username"] = text
+        payload["username"] = normalized
     return payload
 
 
@@ -54,7 +61,9 @@ async def _(args: Message) -> None:
     b15_count = len(data.get("b15", []))
     msg = (
         f"玩家: {data['player_id']}\n"
+        f"模型: {data.get('evaluation_model', '-')}\n"
         f"Rating: {data.get('rating')}\n"
+        f"W值: {data.get('w_tier', '-')}\n"
         f"B35/B15: {b35_count}/{b15_count}\n"
         f"强项: {top[0]['name']}({top[0]['score']}) / {top[1]['name']}({top[1]['score']})\n"
         f"短板: {weak[0]['name']}({weak[0]['score']}) / {weak[1]['name']}({weak[1]['score']})\n"
@@ -101,7 +110,9 @@ async def _(args: Message) -> None:
 
     await b50_summary_cmd.finish(
         f"玩家: {data.get('player_id', '-')}\n"
+        f"模型: {data.get('evaluation_model', '-')}\n"
         f"Rating: {data.get('rating', '-')}\n"
+        f"W值: {data.get('w_tier', '-')}\n"
         f"B35/B15: {len(data.get('b35', []))}/{len(data.get('b15', []))}\n"
         f"Top3:\n" + "\n".join(lines)
     )

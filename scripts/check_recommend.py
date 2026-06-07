@@ -24,6 +24,10 @@ if __name__ == "__main__":
     status, text = fetch("/openapi.json")
     print("openapi_status:", status)
     print("has_recommend:", "/analysis/recommend" in text)
-    status, text = fetch("/analysis/recommend", method="POST", payload={"username": "FHGY", "b50": "1"})
+    status, text = fetch(
+        "/analysis/recommend",
+        method="POST",
+        payload={"username": "FHGY", "b50": "1", "evaluation_model": "s4"},
+    )
     print("recommend_status:", status)
-    print("recommend_resp:", text[:500])
+    print("recommend_resp:", text[:700])

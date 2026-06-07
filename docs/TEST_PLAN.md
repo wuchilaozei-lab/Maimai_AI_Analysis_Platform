@@ -28,6 +28,15 @@
 
 - `POST /analysis/b50`
 - 期望包含：`radar.dimensions[6]`、`shortfalls`、`advice[3]`
+- 期望支持参数：
+  - `evaluation_model=legacy|s4`
+  - `include_records=true|false`
+  - `import_token`（可选）
+- `s4` 模式期望新增字段：
+  - `w_tier`、`stage`
+  - `skill_gaps`
+  - `training_strategy`
+  - `records_summary`
 
 ## 6. 前端联调
 
@@ -44,6 +53,8 @@
   - `b50分析 用户名`
   - `b50摘要 用户名`
   - `今日推荐`
+  - `b50分析 用户名 mode:s4`
+  - `b50摘要 用户名 mode:s4`
 
 ## 8. B50 视觉强化回归
 
@@ -51,3 +62,10 @@
   - B35/B15 分栏切换
   - 评价显示标准化（如 `sssp` -> `SSS+`）
   - 一键导出 B50 总览图（PNG）
+
+## 9. S4 评价体系回归
+
+- 前端支持选择 `legacy/s4` 模式
+- `s4` 模式展示 W 值分层、阶段、策略与短板诊断
+- `/analysis/recommend` 在 `s4` 模式可返回 `evaluation_model` 与 `w_tier`
+- records 不可用时应有可解释降级，不影响主流程
