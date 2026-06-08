@@ -70,6 +70,20 @@ class S4Evaluator:
         }
         return mapping.get(tier, "基础建立期")
 
+    @staticmethod
+    def _percentile(values: list[float], ratio: float) -> float:
+        if not values:
+            return 0.0
+        ordered = sorted(values)
+        idx = min(len(ordered) - 1, max(0, round((len(ordered) - 1) * ratio)))
+        return ordered[idx]
+
+    @staticmethod
+    def _range(low: float, high: float, ceiling: float) -> list[float]:
+        low = round(max(1.0, low), 1)
+        high = round(min(15.0, high, ceiling), 1)
+        return [low, max(low, high)]
+
     def evaluate(self, player_id: str, payload: dict[str, Any]) -> tuple[RadarOutput, list[SkillGap], TrainingStrategy, dict[str, Any], dict[str, Any]]:
         profile = self._extract(payload)
         achievements = profile.achievements or [0.0]
@@ -81,9 +95,13 @@ class S4Evaluator:
         stage = self._stage_by_tier(w_tier)
 
         rating_dim = self._scale(profile.rating, 10000, 16500)
-        # 14级训练区覆盖能力，体现“多打14”
-        in_14_ratio = sum(1 for ds in ds_values if 14.0 <= ds <= 14.4) / max(len(ds_values), 1)
-        level_adapt_dim = self._scale(in_14_ratio, 0.08, 0.60)
+        # 等级适应力按玩家当前B50均值浮动，避免低/中段玩家被固定14区间误判。
+        avg_ds = mean(ds_values)
+        target_low = max(10.0, avg_ds - 0.2)
+        target_high = min(15.0, avg_ds + 0.5)
+        in_target_ratio = sum(1 for ds in ds_values if target_low <= ds <= target_high) / max(len(ds_values), 1)
+        push_ratio = sum(1 for ds in ds_values if avg_ds + 0.2 <= ds <= avg_ds + 0.8) / max(len(ds_values), 1)
+        level_adapt_dim = self._scale(in_target_ratio * 70 + push_ratio * 30, 18, 70)
         # 准度：达成率与高评级占比
         high_rate_ratio = sum(1 for r in rates if r in {"sss", "sssp", "ssp"}) / max(len(rates), 1)
         accuracy_dim = self._scale(mean(achievements) * 0.7 + high_rate_ratio * 100 * 0.3, 92, 101)
@@ -114,11 +132,16 @@ class S4Evaluator:
                 key="level_adapt",
                 name="谱面等级适应力",
                 score=round(level_adapt_dim, 2),
-                reason="关注14级黄金训练区覆盖",
+                reason="关注当前水平附近的训练区覆盖",
                 weight=0.18,
                 level="优势" if level_adapt_dim >= 65 else "待提升",
-                evidence=[f"14区间占比={in_14_ratio:.2f}"],
-                indicators={"in_14_ratio": round(in_14_ratio, 4)},
+                evidence=[f"目标区间={target_low:.1f}-{target_high:.1f}", f"目标区间占比={in_target_ratio:.2f}"],
+                indicators={
+                    "target_low": round(target_low, 3),
+                    "target_high": round(target_high, 3),
+                    "in_target_ratio": round(in_target_ratio, 4),
+                    "push_ratio": round(push_ratio, 4),
+                },
             ),
             DimensionScore(
                 key="accuracy_dx",
@@ -192,26 +215,32 @@ class S4Evaluator:
             for key in shortfalls
         ]
 
+        comfort_ceiling = self._percentile(ds_values, 0.80) + 0.25
+        foundation_range = self._range(avg_ds - 0.1, avg_ds + 0.5, comfort_ceiling)
+        drill_range = self._range(avg_ds - 0.2, avg_ds + 0.7, comfort_ceiling)
+        sweep_range = self._range(avg_ds - 0.3, avg_ds + 0.6, comfort_ceiling)
+        foundation_strategy = "多打14" if avg_ds >= 13.6 else "扩展目标区间"
+
         if "level_adapt" in shortfalls or "stamina_base" in shortfalls:
             strategy = TrainingStrategy(
                 phase="foundation",
-                strategy="多打14",
-                rationale="先扩展14级训练覆盖，补齐底力和体力后再冲高定数。",
-                target_ds_range=[13.8, 14.4],
+                strategy=foundation_strategy,
+                rationale="先扩展当前水平附近的训练覆盖，补齐底力和体力后再冲高定数。",
+                target_ds_range=foundation_range,
             )
         elif "technique_gap" in shortfalls:
             strategy = TrainingStrategy(
                 phase="drill",
                 strategy="专项攻坚",
                 rationale="围绕交互/扫键/折返做专项训练，先解决影响最大的技巧短板。",
-                target_ds_range=[13.5, 14.6],
+                target_ds_range=drill_range,
             )
         else:
             strategy = TrainingStrategy(
                 phase="sweep_net",
                 strategy="收网与大将",
                 rationale="先收网吃分，再集中攻克区间大将谱面。",
-                target_ds_range=[13.7, 14.7],
+                target_ds_range=sweep_range,
             )
 
         level_counts = Counter(profile.level_labels)
@@ -224,7 +253,7 @@ class S4Evaluator:
                 "gt145": sum(1 for ds in ds_values if ds > 14.4),
             },
             "level_label_distribution": dict(level_counts),
-            "comfort_zone_flag": in_14_ratio < 0.15,
+            "comfort_zone_flag": push_ratio < 0.15,
         }
 
         dx_profile = {
